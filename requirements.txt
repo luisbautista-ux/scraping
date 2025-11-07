@@ -1,5 +1,4 @@
 flask
+playwright
 pandas
 openpyxl
-playwright
-gunicorn
