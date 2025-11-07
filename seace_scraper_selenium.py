@@ -1,10 +1,23 @@
-# seace_scraper_playwright_v19.py
+# seace_scraper_selenium.py
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 import pandas as pd
-import os, time, re
+import os, time, re, subprocess
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 
+# ===============================
+# INSTALAR CHROMIUM SI NO EXISTE
+# ===============================
+try:
+    print("🧩 Verificando instalación de Chromium...")
+    subprocess.run(["playwright", "install", "chromium"], check=True)
+    print("✅ Chromium instalado correctamente o ya existente.")
+except Exception as e:
+    print("⚠️ No se pudo instalar Chromium automáticamente:", e)
+
+# ===============================
+# CONFIGURACIÓN GENERAL
+# ===============================
 LOGIN_URL = "https://prod6.seace.gob.pe/auth-proveedor/"
 USUARIO = "20605280057"
 CLAVE = "12345678a"
@@ -21,6 +34,9 @@ PALABRAS_CLAVE = [
     "asesoria", "programacion", "programación"
 ]
 
+# ===============================
+# FUNCIONES AUXILIARES
+# ===============================
 def esperar_carga(page, timeout=120000):
     try:
         page.wait_for_selector("text=Estamos cargando la información solicitada", state="detached", timeout=timeout)
@@ -30,14 +46,11 @@ def esperar_carga(page, timeout=120000):
 def aplicar_estilos_excel(filename):
     wb = load_workbook(filename)
     ws = wb.active
-
     fill_header = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
     font_header = Font(color="FFFFFF", bold=True)
     border_all = Border(
-        left=Side(style="thin"),
-        right=Side(style="thin"),
-        top=Side(style="thin"),
-        bottom=Side(style="thin")
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin")
     )
 
     for cell in ws[1]:
@@ -66,9 +79,7 @@ def extraer_datos_pagina(page, palabra):
     count = panels.count()
     contratos = []
 
-    # Regex exacta: la palabra no puede estar dentro de otra (evita "recursos" o "digitalización")
     patron = re.compile(rf"(?<!\w){re.escape(palabra)}(?!\w)", flags=re.IGNORECASE)
-
     for i in range(count):
         p_tags = panels.nth(i).locator("p")
         textos = [p_tags.nth(j).inner_text().strip() for j in range(p_tags.count())]
@@ -76,12 +87,9 @@ def extraer_datos_pagina(page, palabra):
             continue
 
         descripcion_completa = " ".join(textos).lower()
-
-        # ❌ Ignorar si no hay coincidencia exacta
         if not patron.search(descripcion_completa):
             continue
 
-        # ✅ Registrar solo si cumple
         fecha_pub = ""
         for t in textos:
             if "Fecha de publicación" in t:
@@ -107,12 +115,6 @@ def realizar_busqueda(page, palabra):
     buscador.click()
     buscador.fill("")
 
-    # Escribir la palabra más rápido en el buscador
-    buscador = page.locator('input.field-group__input.h-input-md').first
-    buscador.click()
-    buscador.fill("")
-
-    # Reducir la demora de tipeo y de espera
     for letra in palabra:
         buscador.type(letra, delay=50)
     time.sleep(0.3)
@@ -121,7 +123,6 @@ def realizar_busqueda(page, palabra):
     page.wait_for_timeout(3000)
     print(f"🔍 Buscando '{palabra}'...")
 
-    # ⚡ Si "Contrataciones registradas (0)" -> saltar palabra
     try:
         label_text = page.locator("text=Contrataciones registradas").first.inner_text(timeout=4000)
         if "(" in label_text and ")" in label_text:
@@ -143,12 +144,9 @@ def realizar_busqueda(page, palabra):
     while True:
         print(f"📄 Extrayendo página {pagina} de resultados para '{palabra}'...")
         contratos += extraer_datos_pagina(page, palabra)
-
         try:
             next_button = page.locator('button[aria-label="Next page"]')
-            if next_button.count() == 0:
-                break
-            if next_button.get_attribute("disabled") is not None:
+            if next_button.count() == 0 or next_button.get_attribute("disabled") is not None:
                 break
             next_button.click()
             esperar_carga(page)
@@ -160,6 +158,9 @@ def realizar_busqueda(page, palabra):
     print(f"✅ Total {len(contratos)} contratos obtenidos para '{palabra}'.")
     return contratos
 
+# ===============================
+# PROCESO PRINCIPAL
+# ===============================
 def main():
     resultados = []
     with sync_playwright() as p:
