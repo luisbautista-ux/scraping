@@ -163,7 +163,7 @@ def realizar_busqueda(page, palabra):
 def main():
     resultados = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=200)
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
         context = browser.new_context(storage_state=SESSION_FILE if os.path.exists(SESSION_FILE) else None)
         page = context.new_page()
 
